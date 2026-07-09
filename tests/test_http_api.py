@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 import string
 from urllib.parse import quote
 
@@ -192,10 +193,33 @@ def test_get_player():
     with open(os.path.join(episode2_dir, "2.mkv"), "a"):
         pass
 
-    bangumi_dict = {"player": get_player(bangumi_name)}
+    bangumi_dict = {"player": get_player(bangumi_name, episodes={1, 2, 3})}
 
     assert 1 in bangumi_dict["player"]
     assert bangumi_dict["player"][1]["path"] == f"/{bangumi_name}/1/episode1/1.mp4"
 
     assert 2 in bangumi_dict["player"]
     assert bangumi_dict["player"][2]["path"] == f"/{bangumi_name}/2/2.mkv"
+
+
+def test_get_player_with_path_formatter():
+    bangumi_name = "相反的你和我 第二季"
+    target_dir = cfg.save_path / "相反的你和我" / "S02"
+    old_enable = cfg.enable_path_formatter
+    old_formatter = cfg.path_formatter
+
+    try:
+        cfg.enable_path_formatter = True
+        cfg.path_formatter = "{name}/S{season:02d}/S{season:02d}E{episode:02d}.{suffix}"
+        shutil.rmtree(cfg.save_path / "相反的你和我", ignore_errors=True)
+        target_dir.mkdir(parents=True)
+        (target_dir / "S02E02.txt").write_text("not video")
+        (target_dir / "S02E01.mkv").write_text("video")
+        assert get_player(bangumi_name, episodes={13}, season=2, episode_offset=-12) == {
+            13: {"path": "/相反的你和我/S02/S02E01.mkv"}
+        }
+        assert get_player(bangumi_name, episodes={14}, season=2, episode_offset=-12) == {}
+    finally:
+        cfg.enable_path_formatter = old_enable
+        cfg.path_formatter = old_formatter
+        shutil.rmtree(cfg.save_path / "相反的你和我", ignore_errors=True)
