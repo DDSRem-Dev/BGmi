@@ -1,12 +1,11 @@
 import shutil
 from pathlib import Path
 from typing import List, Tuple
-
-import pytest
+from unittest import mock
 
 from bgmi.config import cfg
 from bgmi.front.index import get_player
-from bgmi.utils import episode_filter_regex, parse_episode
+from bgmi.utils import episode_filter_regex, latest_github_release, parse_episode
 from bgmi.website.model import Episode
 
 _episode_cases: List[Tuple[str, int]] = [
@@ -27,8 +26,7 @@ _episode_cases: List[Tuple[str, int]] = [
     ("不知道什么片 全20话", 0),
     (
         (
-            "[Lilith-Raws] 如果究极进化的完全沉浸 RPG 比现实还更像垃圾游戏的话 / Full Dive - 02 "
-            "[Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]"
+            "[Lilith-Raws] 如果究极进化的完全沉浸 RPG 比现实还更像垃圾游戏的话 / Full Dive - 02 [Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]"
         ),
         2,
     ),
@@ -36,16 +34,30 @@ _episode_cases: List[Tuple[str, int]] = [
         "[Lilith-Raws] 86 - Eighty Six - 01 [Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]",
         1,
     ),
+    (
+        (
+            "六四位元字幕组★躲在超市后门抽烟的两人 Super no Ura de Yani Suu Futari"
+            "★07(abema先行版)★1920x1080★AVC AAC MP4★繁体中文"
+        ),
+        7,
+    ),
+    (
+        (
+            "[7³ACG] 躲在超市后门抽烟的两人/Super no Ura de Yani Suu Futari S01 | "
+            "01-12 [简繁字幕] WEBRip 1080p AV1 AAC 2.0"
+        ),
+        0,
+    ),
     ("[银色子弹字幕组][名侦探柯南][第1068集 圆谷光彦的侦探笔记][简日双语MP4][1080P]", 1068),
     ("[银色子弹字幕组][名侦探柯南][第1071集 工藤优作的推理秀（前篇）][简日双语MP4][1080P]", 1071),
 ]
 
 
-@pytest.mark.parametrize(("title", "episode"), _episode_cases)
-def test_episode_parse(title, episode):
-    assert (
-        parse_episode(title) == episode
-    ), f"\ntitle: {title!r}\nepisode: {episode}\nparsed episode: {parse_episode(title)}"
+def test_episode_parse():
+    for title, episode in _episode_cases:
+        assert (
+            parse_episode(title) == episode
+        ), f"\ntitle: {title!r}\nepisode: {episode}\nparsed episode: {parse_episode(title)}"
 
 
 def test_remove_dupe():
@@ -83,6 +95,32 @@ def test_episode_exclude_word():
     assert Episode(title="a b c", download="").contains_any_words(["a"])
     assert Episode(title="A B c", download="").contains_any_words(["a", "b"])
     assert not Episode(title="a b c", download="").contains_any_words(["d", "ab"])
+
+
+def test_latest_github_release_selects_compatible_tgz_asset():
+    latest_github_release.cache_clear()
+    with mock.patch(
+        "bgmi.utils.github_release_manifest",
+        return_value=[
+            {
+                "tag_name": "v1.9.9",
+                "draft": False,
+                "prerelease": False,
+                "assets": [{"name": "bgmi-frontend-1.9.9.tgz"}],
+            },
+            {
+                "tag_name": "v2.1.3",
+                "draft": False,
+                "prerelease": False,
+                "assets": [{"name": "bgmi-frontend-2.1.3.tgz"}],
+            },
+        ],
+    ):
+        version, release, asset = latest_github_release()
+
+    assert str(version) == "2.1.3"
+    assert release["tag_name"] == "v2.1.3"
+    assert asset["name"] == "bgmi-frontend-2.1.3.tgz"
 
 
 def test_get_player():

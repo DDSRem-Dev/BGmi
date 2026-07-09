@@ -1,18 +1,17 @@
-import json
-import logging
 import os
 import random
 import string
-from unittest import mock
+from urllib.parse import quote
 
-from tornado.testing import AsyncHTTPTestCase
+import pytest
+from requests import Response
+from starlette.testclient import TestClient
 
 from bgmi.config import cfg
-from bgmi.front.base import COVER_URL
 from bgmi.front.index import get_player
+from bgmi.front.routes import COVER_URL
 from bgmi.front.server import make_app
-
-logging.basicConfig(level=logging.DEBUG)
+from bgmi.lib.table import Followed
 
 
 def random_word(length):
@@ -20,168 +19,178 @@ def random_word(length):
     return "".join(random.choice(letters) for i in range(length))
 
 
-logger = logging.getLogger()
-logger.setLevel(logging.ERROR)
+client = TestClient(make_app(debug=True))
+
+headers = {"authorization": f"Bearer {cfg.http.admin_token}"}
+
+bangumi_1 = "名侦探柯南"
+bangumi_2 = "海贼王"
 
 
-class ApiTestCase(AsyncHTTPTestCase):
-    headers = {"BGmi-Token": cfg.http.admin_token, "Content-Type": "application/json"}
-    bangumi_1 = "名侦探柯南"
-    bangumi_2 = "海贼王"
-    bangumi_3 = "黑色五叶草"
-
-    def get_app(self):
-        self.app = make_app()
-        return self.app
-
-    def test_a_auth(self):
-        r = self.fetch("/api/auth", method="POST", body=json.dumps({"token": cfg.http.admin_token}))
-        assert r.code == 200
-        res = self.parse_response(r)
-        assert res["status"] == "success"
-
-        r = self.fetch("/api/auth", method="POST", body=json.dumps({"token": "3"}))
-        assert r.code == 400
-        res = self.parse_response(r)
-        assert res["status"] == "error"
-
-    def test_a_cal(self):
-        m = mock.Mock(return_value={"status": "warning", "data": {"hello": "world"}})
-        with mock.patch("bgmi.front.admin.API_MAP_GET", {"cal": m}):
-            r = self.fetch("/api/cal", method="GET")
-            res = self.parse_response(r)
-            assert res["data"] == {"hello": "world"}
-            m.assert_called_once_with()
-
-    def test_b_add(self):
-        m = mock.Mock(return_value={"status": "warning"})
-        with mock.patch("bgmi.front.admin.API_MAP_POST", {"add": m}):
-            r = self.fetch(
-                "/api/add",
-                method="POST",
-                headers=self.headers,
-                body=json.dumps({"name": self.bangumi_1}),
-            )
-            assert r.code == 200
-            m.assert_called_once_with(name=self.bangumi_1)
-
-    def test_c_delete(self):
-        m = mock.Mock(return_value={"status": "warning"})
-        with mock.patch("bgmi.front.admin.API_MAP_POST", {"delete": m}):
-            m.return_value = {"status": "warning"}
-            r = self.fetch(
-                "/api/delete",
-                method="POST",
-                headers=self.headers,
-                body=json.dumps({"name": self.bangumi_2}),
-            )
-            assert r.code == 200
-            r = self.parse_response(r)
-            assert r["status"] == "warning"
-            m.assert_called_once_with(name=self.bangumi_2)
-
-    def test_e_mark(self):
-        m = mock.Mock(return_value={"status": "success"})
-        episode = random.randint(0, 10)
-        with mock.patch("bgmi.front.admin.API_MAP_POST", {"mark": m}):
-            r = self.fetch(
-                "/api/mark",
-                method="POST",
-                headers=self.headers,
-                body=json.dumps({"name": self.bangumi_1, "episode": episode}),
-            )
-            m.assert_called_once_with(**{"name": self.bangumi_1, "episode": episode})
-
-            assert r.code == 200
-
-    def test_d_filter(self):
-        include = random_word(5)
-        exclude = random_word(5)
-        regex = random_word(5)
-
-        m = mock.Mock(return_value={"status": "success", "data": {"h": "w"}})
-        with mock.patch("bgmi.front.admin.API_MAP_POST", {"filter": m}):
-            r = self.fetch(
-                "/api/filter",
-                method="POST",
-                body=json.dumps({"name": self.bangumi_1}),
-                headers=self.headers,
-            )
-
-            assert r.code == 200
-            res = self.parse_response(r)
-            assert res["data"] == {"h": "w"}
-            assert res["status"] == "success"
-            m.assert_called_once_with(name=self.bangumi_1)
-
-            data = {
-                "name": self.bangumi_1,
-                "include": include,
-                "regex": regex,
-                "exclude": exclude,
-                "subtitle": "a,b,c",
-            }
-            self.fetch(
-                "/api/filter",
-                method="POST",
-                body=json.dumps(data),
-                headers=self.headers,
-            )
-            m.assert_called_with(**data)
-
-    def test_e_index(self):
-        m = mock.Mock(return_value={"status": "success", "data": {"h": "w"}})
-        m2 = mock.Mock(
-            return_value=[
-                {"bangumi_name": "233", "updated_time": 3, "cover": "233"},
-                {"bangumi_name": "2333", "updated_time": 20000000000, "cover": "2333"},
-            ]
-        )
-        with mock.patch("bgmi.front.index.get_player", m), mock.patch("bgmi.lib.models.Followed.get_all_followed", m2):
-            response = self.fetch("/api/index", method="GET")
-        assert response.code == 200
-        r = self.parse_response(response)
-        assert COVER_URL + "/2333" == r["data"][0]["cover"], json.dumps(r["data"])
-        m.assert_has_calls(
-            [
-                mock.call("233"),
-                mock.call("2333"),
-                mock.call("TEST_BANGUMI"),
-            ],
-            any_order=True,
-        )
-        assert m.call_count == 3
-
-    def test_resource_ics(self):
-        r = self.fetch("/resource/feed.xml")
-        assert r.code == 200
-
-    def test_resource_feed(self):
-        r = self.fetch("/resource/calendar.ics")
-        assert r.code == 200
-
-    def test_no_auth(self):
-        r = self.fetch("/api/add", method="POST", body=json.dumps({"name": self.bangumi_1}))
-        assert r.code == 401
-
-    @staticmethod
-    def parse_response(response):
-        r = json.loads(response.body.decode("utf-8"))
-        return r
+@pytest.mark.usefixtures("_ensure_data")
+def test_no_auth():
+    r = client.post("/api/admin/auth")
+    assert r.status_code == 403, r.text
 
 
+@pytest.mark.usefixtures("_ensure_data")
+def test_calendar():
+    r = client.get("/api/calendar")
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_b_add():
+    r = client.post(
+        "/api/admin/add",
+        headers=headers,
+        json={"bangumi": bangumi_1},
+    )
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_b_add_new():
+    r = client.post(
+        "/api/admin/add",
+        headers=headers,
+        json={"bangumi": bangumi_2},
+    )
+    assert r.status_code == 200, r.text
+    f = Followed.get(Followed.bangumi_name == bangumi_2)
+    assert f.status == Followed.STATUS_FOLLOWED
+    assert f.episodes == set()
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_delete():
+    r = client.post(
+        "/api/admin/delete",
+        headers=headers,
+        json={"bangumi": bangumi_1},
+    )
+    assert r.status_code == 200, r.text
+    assert Followed.get(Followed.bangumi_name == bangumi_1).status == Followed.STATUS_DELETED
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_delete_not_found():
+    r = client.post(
+        "/api/admin/delete",
+        headers=headers,
+        json={"bangumi": bangumi_2},
+    )
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_seen():
+    r = client.get(f"/api/admin/seen/{quote(bangumi_1)}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "bangumi": bangumi_1,
+        "total_episode": 2,
+        "seen": [1, 2],
+    }
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_seen_forget():
+    r = client.post(
+        "/api/admin/seen_forget",
+        headers=headers,
+        json={"bangumi": bangumi_1, "episode": 2},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "bangumi": bangumi_1,
+        "episode": 2,
+        "seen": [1],
+    }
+    f = Followed.get(Followed.bangumi_name == bangumi_1)
+    assert 2 not in f.episodes
+    assert 1 in f.episodes
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_seen_forget_not_found():
+    r = client.post(
+        "/api/admin/seen_forget",
+        headers=headers,
+        json={"bangumi": bangumi_1, "episode": 999},
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_seen_mark():
+    r = client.post(
+        "/api/admin/seen_mark",
+        headers=headers,
+        json={"bangumi": bangumi_1, "episode": 3},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "bangumi": bangumi_1,
+        "episode": 3,
+        "seen": [1, 2, 3],
+    }
+    f = Followed.get(Followed.bangumi_name == bangumi_1)
+    assert 1 in f.episodes
+    assert 2 in f.episodes
+    assert 3 in f.episodes
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_filter():
+    r = client.get(f"/api/admin/filter/{quote(bangumi_1)}", headers=headers)
+    assert r.status_code == 200, r.text
+
+    r = client.patch(
+        f"/api/admin/filter/{quote(bangumi_1)}",
+        json={"include": ["1", "2", "3"]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    assert Followed.get(Followed.bangumi_name == bangumi_1).include == ["1", "2", "3"]
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_index():
+    response = client.get("/api/index/index")
+    assert response.status_code == 200, response.text
+    r = response.json()
+    assert r["data"], r
+    assert r["data"][0].get("cover"), r
+    assert COVER_URL + "/hello" == r["data"][0]["cover"], r
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_resource_feed():
+    r = client.get("/resource/calendar.ics")
+    assert r.status_code == 200
+
+
+def parse_response(response: Response):
+    return response.json()
+
+
+@pytest.mark.usefixtures("_ensure_data")
 def test_get_player():
     bangumi_name = "test"
     save_dir = os.path.join(cfg.save_path)
     episode1_dir = os.path.join(save_dir, bangumi_name, "1", "episode1")
     if not os.path.exists(episode1_dir):
         os.makedirs(episode1_dir)
-    open(os.path.join(episode1_dir, "1.mp4"), "a").close()
+    with open(os.path.join(episode1_dir, "1.mp4"), "a"):
+        pass
 
     episode2_dir = os.path.join(save_dir, bangumi_name, "2")
     if not os.path.exists(episode2_dir):
         os.makedirs(episode2_dir)
-    open(os.path.join(episode2_dir, "2.mkv"), "a").close()
+    with open(os.path.join(episode2_dir, "2.mkv"), "a"):
+        pass
 
     bangumi_dict = {"player": get_player(bangumi_name)}
 

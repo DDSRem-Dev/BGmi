@@ -1,4 +1,3 @@
-import asyncio
 import os.path
 import shutil
 import tempfile
@@ -8,8 +7,16 @@ import pytest
 import requests_cache
 import urllib3
 
-from bgmi.config import IS_WINDOWS, cfg
-from bgmi.lib.models import recreate_scripts_table, recreate_source_relatively_table
+from bgmi.config import cfg
+from bgmi.lib.table import (
+    Bangumi,
+    Followed,
+    Session,
+    Scripts,
+    Subtitle,
+    recreate_scripts_table,
+    recreate_source_relatively_table,
+)
 
 
 def pytest_addoption(parser):
@@ -30,8 +37,6 @@ def pytest_sessionstart(session):
         )
     ensure_example_script()
     urllib3.disable_warnings()
-    if IS_WINDOWS:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def ensure_example_script():
@@ -46,20 +51,49 @@ def ensure_example_script():
 
 
 @pytest.fixture()
-def data_source_bangumi_name():
-    return {
-        "bangumi_moe": ["名侦探柯南", "妖精的尾巴"],
-        "mikan_project": ["名侦探柯南", "海贼王"],
-        "dmhy": ["名偵探柯南", "海賊王"],
-    }
+def _calendar_cache():
+    """Fetch calendar once per source, shared across fixtures."""
+    import random
+
+    from bgmi.lib.fetch import DATA_SOURCE_MAP
+
+    cache = {}
+    for source_name, source_cls in DATA_SOURCE_MAP.items():
+        bangumi_list = source_cls().fetch_bangumi_calendar()
+        assert bangumi_list, f"Calendar fetch returned empty for {source_name}"
+        random.shuffle(bangumi_list)
+        cache[source_name] = bangumi_list
+    return cache
 
 
 @pytest.fixture()
-def data_source_subtitle_name():
-    return {
-        "bangumi_moe": ["LoliHouse"],
-        "mikan_project": ["LoliHouse"],
-    }
+def data_source_bangumi_name(_calendar_cache):
+    return {source: [b.name for b in bl[:5]] for source, bl in _calendar_cache.items()}
+
+
+@pytest.fixture()
+def data_source_subtitle_name(_calendar_cache):
+    from bgmi.lib.fetch import DATA_SOURCE_MAP
+
+    result = {}
+    for source_name, bangumi_list in _calendar_cache.items():
+        pairs = []
+        for b in bangumi_list:
+            if b.subtitle_group:
+                pairs.append((b.name, b.subtitle_group[0].name))
+                if len(pairs) >= 5:
+                    break
+        if not pairs:
+            w = DATA_SOURCE_MAP[source_name]()
+            for b in bangumi_list[:3]:
+                info = w.fetch_single_bangumi(b.id)
+                if info and info.subtitle_group:
+                    pairs.append((b.name, info.subtitle_group[0].name))
+                    if len(pairs) >= 5:
+                        break
+        if pairs:
+            result[source_name] = pairs
+    return result
 
 
 @pytest.fixture()
@@ -78,11 +112,35 @@ def bangumi_names(data_source_bangumi_name):
 
 @pytest.fixture()
 def bangumi_subtitles(data_source_subtitle_name):
-    return data_source_subtitle_name["bangumi_moe"]
+    return [pair[1] for pair in data_source_subtitle_name["bangumi_moe"][:1]]
 
 
 @pytest.fixture()
 def mock_download_driver():
     mock_downloader = mock.Mock()
+    mock_downloader.add_download.return_value = "mock-task-id"
     with mock.patch("bgmi.lib.download.get_download_driver", mock.Mock(return_value=mock_downloader)):
         yield mock_downloader
+
+
+bangumi_name_1 = "名侦探柯南"
+bangumi_name_2 = "海贼王"
+
+
+@pytest.fixture()
+def _ensure_data():
+    with Session.begin() as tx:
+        tx.query(Bangumi).delete()
+        tx.query(Followed).delete()
+        tx.query(Scripts).delete()
+        tx.query(Subtitle).delete()
+        tx.add(Bangumi(name=bangumi_name_1, id="1", subtitle_group=["id1", "id2"], cover="hello"))
+        tx.add(Bangumi(name=bangumi_name_2, id="2"))
+        tx.add_all(
+            [
+                Subtitle(id="id1", name="sg1"),
+                Subtitle(id="id2", name="sg2"),
+                Subtitle(id="id3", name="sg3"),
+            ]
+        )
+        tx.add(Followed(bangumi_name=bangumi_name_1, episodes={1, 2}))
