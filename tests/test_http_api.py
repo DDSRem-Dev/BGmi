@@ -2,6 +2,7 @@ import os
 import random
 import shutil
 import string
+from unittest import mock
 from urllib.parse import quote
 
 import pytest
@@ -55,12 +56,14 @@ def test_b_add_new():
     r = client.post(
         "/api/admin/add",
         headers=headers,
-        json={"bangumi": bangumi_2},
+        json={"bangumi": bangumi_2, "season": 2, "episode_offset": -12},
     )
     assert r.status_code == 200, r.text
     f = Followed.get(Followed.bangumi_name == bangumi_2)
     assert f.status == Followed.STATUS_FOLLOWED
     assert f.episodes == set()
+    assert f.season == 2
+    assert f.episode_offset == -12
 
 
 @pytest.mark.usefixtures("_ensure_data")
@@ -143,6 +146,21 @@ def test_seen_mark():
 
 
 @pytest.mark.usefixtures("_ensure_data")
+def test_seen_mark_batch():
+    r = client.post(
+        "/api/admin/seen_mark",
+        headers=headers,
+        json={"bangumi": bangumi_1, "episodes": [3, 4]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "bangumi": bangumi_1,
+        "episodes": [3, 4],
+        "seen": [1, 2, 3, 4],
+    }
+
+
+@pytest.mark.usefixtures("_ensure_data")
 def test_filter():
     r = client.get(f"/api/admin/filter/{quote(bangumi_1)}", headers=headers)
     assert r.status_code == 200, r.text
@@ -159,12 +177,32 @@ def test_filter():
 
 @pytest.mark.usefixtures("_ensure_data")
 def test_index():
-    response = client.get("/api/index/index")
+    with mock.patch("bgmi.front.routes.get_player") as get_player_mock:
+        response = client.get("/api/index/index")
+    get_player_mock.assert_not_called()
+
     assert response.status_code == 200, response.text
     r = response.json()
     assert r["data"], r
     assert r["data"][0].get("cover"), r
+    assert r["data"][0]["id"] == "1", r
     assert COVER_URL + "/hello" == r["data"][0]["cover"], r
+    assert all("episodes" not in item for item in r["data"])
+    assert all("player" not in item for item in r["data"])
+
+
+@pytest.mark.usefixtures("_ensure_data")
+def test_player_by_id():
+    episode_dir = cfg.save_path / bangumi_1 / "1"
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    (episode_dir / "1.mp4").write_text("")
+
+    response = client.get("/api/player/1")
+    assert response.status_code == 200, response.text
+    r = response.json()
+    assert r["data"]["id"] == "1"
+    assert r["data"]["bangumi_name"] == bangumi_1
+    assert r["data"]["player"]["1"]["path"] == f"/{bangumi_1}/1/1.mp4"
 
 
 @pytest.mark.usefixtures("_ensure_data")
