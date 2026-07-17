@@ -67,7 +67,7 @@ wheels = [
 
 [[package]]
 name = "bgmi"
-version = "5.0.0a5"
+version = "5.0.0b1"
 source = { editable = "." }
 dependencies = [
     { name = "anime-episode-parser" },

@@ -79,7 +79,7 @@ pipx install bgmi
 安装 v5 预发布版本：
 
 ```bash
-pipx install "bgmi==5.0.0a5"
+pipx install "bgmi==5.0.0b1"
 ```
 
 ### 使用 pip 安装稳定版本
@@ -91,7 +91,7 @@ pip install bgmi
 使用 pip 安装 v5 预发布版本：
 
 ```bash
-pip install "bgmi==5.0.0a5"
+pip install "bgmi==5.0.0b1"
 ```
 
 ### 从源码安装（不推荐）
