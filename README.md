@@ -10,7 +10,7 @@ BGmi 是一个用来追番的命令行程序。
 
 ## 更新日志
 
-### V5
+### V5.0.0
 
 v5 是一次主要版本更新，重点是更可靠的单集追踪、更适合媒体库的下载整理，以及新的 HTTP/MCP 管理接口。
 
@@ -70,28 +70,18 @@ v5 是一次主要版本更新，重点是更可靠的单集追踪、更适合�
 
 ## 安装
 
+当前稳定版本为 v5.0.0，需要 Python 3.11+。
+
 使用 [pipx](https://pypa.github.io/pipx/) 安装（推荐）：
 
 ```bash
 pipx install bgmi
 ```
 
-安装 v5 预发布版本：
-
-```bash
-pipx install "bgmi==5.0.0b1"
-```
-
 ### 使用 pip 安装稳定版本
 
 ```bash
 pip install bgmi
-```
-
-使用 pip 安装 v5 预发布版本：
-
-```bash
-pip install "bgmi==5.0.0b1"
 ```
 
 ### 从源码安装（不推荐）

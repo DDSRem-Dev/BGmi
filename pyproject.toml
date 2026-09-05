@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "bgmi"
-version = "5.0.0b1"
+version = "5.0.0"
 description = 'BGmi is a cli tool for subscribed bangumi.'
 authors = [{ name = "RicterZ", email = "ricterzheng@gmail.com" }]
 readme = 'README.md'
@@ -36,13 +36,10 @@ dependencies = [
   "yarl==1.20.1",
 ]
 classifiers = [
-  'Development Status :: 4 - Beta',
+  'Development Status :: 5 - Production/Stable',
   'Intended Audience :: Other Audience',
   'Natural Language :: Chinese (Traditional)',
   'Programming Language :: Python',
-  'Programming Language :: Python :: 3.8',
-  'Programming Language :: Python :: 3.9',
-  'Programming Language :: Python :: 3.10',
   'Programming Language :: Python :: 3.11',
   'Programming Language :: Python :: 3.12',
   'Programming Language :: Python :: 3.13',
